@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>I/O 스위처 리모컨</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #d9dfe3;
+    --plate: #f3f5f6;
+    --ink: #1b2328;
+    --muted: #55636b;
+    --line: #bcc5cb;
+    --on: #f2b33d;
+    --on-ink: #2a1d00;
+    --off: #34424b;
+    --off-ink: #f3f5f6;
+    --focus: #1f6feb;
+    --err: #b3261e;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #12171a;
+      --plate: #1d2428;
+      --ink: #e8edf0;
+      --muted: #93a1aa;
+      --line: #333e45;
+      --on: #e8a93a;
+      --on-ink: #1e1500;
+      --off: #2c373e;
+      --off-ink: #e8edf0;
+      --focus: #6ca8ff;
+      --err: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #12171a;
+    --plate: #1d2428;
+    --ink: #e8edf0;
+    --muted: #93a1aa;
+    --line: #333e45;
+    --on: #e8a93a;
+    --on-ink: #1e1500;
+    --off: #2c373e;
+    --off-ink: #e8edf0;
+    --focus: #6ca8ff;
+    --err: #ff8a80;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 20px 16px 32px;
+  }
+  main { width: 100%; max-width: 420px; }
+  h1 { font-size: 1.25rem; font-weight: 700; margin: 8px 4px 16px; letter-spacing: -0.01em; }
+
+  .plate {
+    background: var(--plate);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 18px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .connect-row { display: grid; gap: 8px; }
+  .status { margin: 0; font-size: 0.95rem; color: var(--muted); min-height: 1.5em; }
+  .status.error { color: var(--err); }
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .connect {
+    border: 1px solid var(--ink);
+    background: transparent;
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .connect[aria-pressed="true"] { background: var(--ink); color: var(--plate); }
+  .link {
+    border: 0; background: none; padding: 4px 0;
+    color: var(--muted); font-size: 0.85rem; text-decoration: underline; text-align: left;
+  }
+
+  .rocker { display: grid; gap: 8px; }
+  .rocker h2 { font-size: 0.95rem; font-weight: 600; margin: 0 2px; color: var(--muted); }
+  .rocker-body {
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    display: grid;
+  }
+  .half {
+    border: 0;
+    min-height: 84px;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: filter 0.15s, transform 0.08s;
+  }
+  .half:active:not(:disabled) { transform: scale(0.985); }
+  .half.on { background: var(--on); color: var(--on-ink); }
+  .half.off { background: var(--off); color: var(--off-ink); }
+  .half.sent { filter: brightness(1.18); }
+  .half + .half { border-top: 1px solid var(--line); }
+
+  .opts { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .opts label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 0.95rem; }
+  .opts input { width: 22px; height: 22px; accent-color: var(--ink); }
+
+  details { font-size: 0.85rem; color: var(--muted); }
+  summary { cursor: pointer; padding: 6px 0; }
+  pre {
+    margin: 6px 0 0; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
+    max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    font-size: 0.78rem; color: var(--ink);
+  }
+  .note { font-size: 0.82rem; color: var(--muted); margin: 14px 4px 0; }
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .half { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>I/O 스위처 리모컨 <small style="font-weight:400;color:var(--muted)">v3</small></h1>
+
+  <div class="plate">
+    <div class="connect-row">
+      <button id="connectBtn" class="connect" type="button">스위처 연결</button>
+      <p id="status" class="status" role="status" aria-live="polite">연결 버튼을 누르고 SWITCHER_M을 선택하세요.</p>
+      <button id="allBtn" class="link" type="button">목록에 기기가 안 보이면: 모든 블루투스 기기 보기</button>
+    </div>
+
+    <section class="rocker" id="rocker1" aria-label="스위치 1">
+      <h2>스위치 1</h2>
+      <div class="rocker-body">
+        <button class="half on" type="button" data-sw="1" data-act="on" disabled>켜기</button>
+        <button class="half off" type="button" data-sw="1" data-act="off" disabled>끄기</button>
+      </div>
+    </section>
+
+    <section class="rocker" id="rocker2" aria-label="스위치 2" hidden>
+      <h2>스위치 2</h2>
+      <div class="rocker-body">
+        <button class="half on" type="button" data-sw="2" data-act="on" disabled>켜기</button>
+        <button class="half off" type="button" data-sw="2" data-act="off" disabled>끄기</button>
+      </div>
+    </section>
+
+    <div class="opts">
+      <label><input type="checkbox" id="two"> 2구 스위처</label>
+      <label><input type="checkbox" id="invert"> 켜기/끄기 반대로 작동</label>
+    </div>
+
+    <details open>
+      <summary>통신 기록</summary>
+      <pre id="log">아직 기록이 없어요.</pre>
+    </details>
+  </div>
+
+  <p class="note">기기가 켜져 있는 상태만 알려주지 않아요. 누를 때마다 명령만 보내요. 아이폰에서는 Safari가 아니라 Bluefy 같은 웹 블루투스 브라우저에서 열어야 해요.</p>
+</main>
+
+<script>
+(function () {
+  var SERVICE = "0000150b-0000-1000-8000-00805f9b34fb";
+  var CHAR = "000015ba-0000-1000-8000-00805f9b34fb";
+  // 1구 기준 켜기 00 / 끄기 01, 스위치 2는 켜기 05 / 끄기 03
+  var KEYS = { 1: { on: 0x00, off: 0x01 }, 2: { on: 0x05, off: 0x03 } };
+
+  var device = null, ch = null, busy = false;
+
+  window.addEventListener("error", function (ev) {
+    var el = document.getElementById("status");
+    if (el) { el.textContent = "페이지 오류: " + ev.message; el.className = "status error"; }
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var el = document.getElementById("status");
+    var r = ev.reason;
+    if (el) { el.textContent = "오류: " + (r && r.name ? r.name + " - " : "") + (r && r.message ? r.message : r); el.className = "status error"; }
+  });
+
+  var $ = function (id) { return document.getElementById(id); };
+  var statusEl = $("status"), logEl = $("log");
+  var connectBtn = $("connectBtn"), allBtn = $("allBtn");
+  var twoEl = $("two"), invertEl = $("invert");
+  var halves = Array.prototype.slice.call(document.querySelectorAll(".half"));
+  var logLines = [];
+
+  function setStatus(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (isError ? " error" : "");
+  }
+  function log(text) {
+    var t = new Date().toLocaleTimeString("ko-KR", { hour12: false });
+    logLines.push(t + "  " + text);
+    if (logLines.length > 60) logLines.shift();
+    logEl.textContent = logLines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function store(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+  function applyType() {
+    $("rocker2").hidden = !twoEl.checked;
+  }
+  twoEl.checked = load("io_two") === "1";
+  invertEl.checked = load("io_invert") === "1";
+  applyType();
+  twoEl.addEventListener("change", function () { store("io_two", twoEl.checked ? "1" : "0"); applyType(); });
+  invertEl.addEventListener("change", function () { store("io_invert", invertEl.checked ? "1" : "0"); });
+
+  function setControls(enabled) {
+    halves.forEach(function (b) { b.disabled = !enabled; });
+  }
+  function setConnected(on) {
+    connectBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    connectBtn.textContent = on ? "연결됨 (다시 연결)" : "스위처 연결";
+    setControls(on && !busy);
+  }
+
+  if (!navigator.bluetooth) {
+    connectBtn.disabled = true;
+    allBtn.hidden = true;
+    setStatus("이 브라우저는 웹 블루투스를 지원하지 않아요. 아이폰에서는 Bluefy 앱으로 이 페이지를 열어주세요.", true);
+    return;
+  }
+
+  function withTimeout(p, ms, label) {
+    return Promise.race([p, new Promise(function (_, rej) {
+      setTimeout(function () {
+        var e = new Error(label + " 응답 없음 (" + (ms / 1000) + "초)");
+        e.name = "TimeoutError";
+        rej(e);
+      }, ms);
+    })]);
+  }
+
+  async function openGatt() {
+    log("1/3 기기에 연결 요청");
+    var server = await withTimeout(device.gatt.connect(), 10000, "기기 연결");
+    log("1/3 기기 연결됨");
+    log("2/3 서비스 찾는 중");
+    var svc = await withTimeout(server.getPrimaryService(SERVICE), 10000, "서비스 찾기");
+    log("2/3 서비스 찾음");
+    log("3/3 특성 찾는 중");
+    try {
+      ch = await withTimeout(svc.getCharacteristic(CHAR), 10000, "특성 찾기");
+    } catch (e) {
+      var all = await withTimeout(svc.getCharacteristics(), 10000, "특성 목록");
+      if (!all.length) throw e;
+      ch = all[all.length - 1];
+      log("기본 특성을 못 찾아 마지막 특성을 사용: " + ch.uuid);
+    }
+    log("3/3 특성 찾음. 연결 완료");
+  }
+
+  async function openWithRetry() {
+    var last;
+    for (var i = 1; i <= 5; i++) {
+      try { await openGatt(); return; }
+      catch (e) {
+        last = e;
+        log("연결 시도 " + i + "/5 실패: " + (e && e.name ? e.name + " - " : "") + (e && e.message ? e.message : e));
+        try { if (device.gatt.connected) device.gatt.disconnect(); } catch (x) {}
+        await new Promise(function (r) { setTimeout(r, 1000); });
+      }
+    }
+    throw last;
+  }
+
+  function onDisconnected() {
+    log("연결이 끊어졌어요");
+    ch = null;
+    setConnected(false);
+    setStatus("연결이 끊어졌어요. 버튼을 누르면 다시 연결해요.");
+  }
+
+  async function connect(showAll) {
+    var opts = showAll
+      ? { acceptAllDevices: true, optionalServices: [SERVICE] }
+      : { filters: [{ namePrefix: "SWITCHER" }], optionalServices: [SERVICE] };
+    try {
+      busy = true; setControls(false); connectBtn.disabled = true;
+      setStatus("기기를 고르세요.");
+      var picked = await navigator.bluetooth.requestDevice(opts);
+      if (device && device !== picked) {
+        device.removeEventListener("gattserverdisconnected", onDisconnected);
+      }
+      device = picked;
+      device.removeEventListener("gattserverdisconnected", onDisconnected);
+      device.addEventListener("gattserverdisconnected", onDisconnected);
+      log("선택한 기기: " + (device.name || "이름 없음"));
+      setStatus("연결 중… (최대 5번 시도해요)");
+      await openWithRetry();
+      busy = false;
+      setConnected(true);
+      setStatus((device.name || "스위처") + "에 연결됐어요.");
+    } catch (e) {
+      busy = false;
+      log("연결 실패: " + (e && e.message ? e.message : e));
+      setConnected(false);
+      if (e && e.name === "NotFoundError") {
+        setStatus("기기를 선택하지 않았어요. 스위처 가까이에서 다시 시도하세요.");
+      } else {
+        setStatus("연결하지 못했어요: " + (e && e.name ? e.name + " - " : "") + (e && e.message ? e.message : e), true);
+      }
+    } finally {
+      connectBtn.disabled = false;
+    }
+  }
+
+  connectBtn.addEventListener("click", function () { connect(false); });
+  allBtn.addEventListener("click", function () { connect(true); });
+
+  async function write(value) {
+    var data = new Uint8Array([value]);
+    var props = ch.properties || {};
+    if (props.write && ch.writeValueWithResponse) {
+      await ch.writeValueWithResponse(data);
+    } else if (props.writeWithoutResponse && ch.writeValueWithoutResponse) {
+      await ch.writeValueWithoutResponse(data);
+    } else {
+      await ch.writeValue(data);
+    }
+  }
+
+  async function send(sw, act, btn) {
+    if (!device) { setStatus("먼저 스위처를 연결하세요.", true); return; }
+    var real = act;
+    if (invertEl.checked) real = act === "on" ? "off" : "on";
+    var value = KEYS[sw][real];
+    busy = true; setControls(false);
+    try {
+      if (!device.gatt.connected || !ch) { setStatus("다시 연결 중…"); await openGatt(); }
+      var tries = 2, lastErr;
+      while (tries-- > 0) {
+        try {
+          await write(value);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          log("전송 재시도: " + (e && e.message ? e.message : e));
+          if (!device.gatt.connected) await openGatt();
+        }
+      }
+      if (lastErr) throw lastErr;
+      log("스위치 " + sw + " " + (act === "on" ? "켜기" : "끄기") + " 전송 (값 0x" + value.toString(16).padStart(2, "0") + ")");
+      setStatus("스위치 " + sw + " " + (act === "on" ? "켜기" : "끄기") + " 명령을 보냈어요.");
+      btn.classList.add("sent");
+      setTimeout(function () { btn.classList.remove("sent"); }, 350);
+    } catch (e) {
+      log("전송 실패: " + (e && e.message ? e.message : e));
+      setStatus("명령을 보내지 못했어요. 스위처 가까이에서 연결 버튼을 다시 누르세요.", true);
+    } finally {
+      busy = false;
+      setControls(!!device && !!device.gatt && device.gatt.connected);
+    }
+  }
+
+  halves.forEach(function (b) {
+    b.addEventListener("click", function () {
+      send(Number(b.getAttribute("data-sw")), b.getAttribute("data-act"), b);
+    });
+  });
+})();
+</script>
+</body>
+</html>
